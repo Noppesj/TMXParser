@@ -9,29 +9,88 @@ const char* file_path = "..//Files//test2.tmx";
 std::string getString(const std::string& line)
 {
 	std::string temp = line.substr(line.find("\""), line.length());
-	return temp.substr(1, (line.find("\"") - 1) );
+	std::string result = temp.substr(1,( temp.find("\"", 1) - 1));
+	return result;
 }
 
 int getInt(const std::string& line)
 {
 	std::string temp = line.substr(line.find("\""), line.length());
-	temp = temp.substr(1, (line.find("\"") - 1) );
+	temp = temp.substr(1, (temp.find("\"", 1) - 1) );
 	return (int)atof(temp.c_str());
 }
+
+void readData(std::ifstream &reader, TMX_Map &map)
+{
+	std::string line;
+	char currentChar;
+	std::string data = "";
+	while (getline(reader, line, '\n'))
+	{
+
+		for (unsigned int i = 0; i < line.length(); i++)
+		{
+			currentChar = line[i];
+			if (currentChar == ',')
+			{
+				map.addTilesData((int)atof(data.c_str()));
+				data.clear();
+			}
+			else if (currentChar == '<')
+			{
+				return;
+			}
+			else
+			{
+				data += currentChar;
+			}
+		}
+	}
+}
+
+void test2()
+{
+	FILE *file;
+	TMX_Map map;
+	unsigned long fileLen;
+
+	fopen_s(&file,"..//Files//test2.bin", "rb");
+	if (!file)
+	{
+		fprintf(stderr, "Unable to open file %s", "..//Files//test2.bin");
+		return;
+	}
+
+	fseek(file, 0, SEEK_END);
+	fileLen = ftell(file);
+	fseek(file, 0, SEEK_SET);
+
+
+	fread(&map, fileLen, 1, file);
+	fclose(file);
+}
+
+void writeBin(TMX_Map &map)
+{
+	FILE *fp;
+	fopen_s(&fp, "..//Files//test2.bin", "wb");
+
+	fwrite(&map, sizeof(map), 1, fp);
+
+	fclose(fp);
+	test2();
+}
+
+
 
 void read1()
 {
 	std::ifstream reader(file_path, std::ios_base::in);
 	std::string word;
 	std::string line;
-	unsigned int mapWidth;
-	unsigned int mapHeight;
-	unsigned int tileWidth;
-	unsigned int tileHeight;
-	unsigned int imageWidth;
-	unsigned int imageHeight;
-	std::string tileSetName;
-	std::string imageName;
+
+	TMX_Map map;
+	TMX_AnimatedTile animationTile;
 
 	if ( !reader.is_open() )
 	{
@@ -51,70 +110,105 @@ void read1()
 				//std::cout << word << std::endl;
 				if (strstr(word.c_str(), "width=") != nullptr)
 				{
-					mapWidth = getInt(word);
+					map.setMapWidth( getInt(word) );
 				}
 				else if (strstr(word.c_str(), "height=") != nullptr)
 				{
-					mapHeight = getInt(word);
-				}
-				else if (strstr(word.c_str(), "tilewidth=") != nullptr)
-				{
-					tileWidth = getInt(word);
-				}
-				else if (strstr(word.c_str(), "tileheight=") != nullptr)
-				{
-					tileHeight = getInt(word);
+					map.setMapHeight( getInt(word) );
+					break;
 				}
 			}
 		}
 		else if (strstr(line.c_str(), "<tileset") != nullptr)
 		{
-			if (strstr(word.c_str(), "name=\"") != nullptr)
+			std::stringstream ss(line);
+			while (ss >> word)
 			{
-				tileSetName = getString(word);
+				if (strstr(word.c_str(), "name=\"") != nullptr)
+				{
+					std::string temp = getString(word);
+					map.setTileSetName(getString(word));
+				}
+				else if (strstr(word.c_str(), "tilewidth=") != nullptr)
+				{
+					map.setTileWidth(getInt(word));
+				}
+				else if (strstr(word.c_str(), "tileheight=") != nullptr)
+				{
+					map.setTileHeight(getInt(word));
+				}
 			}
 		}
 		else if (strstr(line.c_str(), "<image source=") != nullptr)
 		{
-			if (strstr(word.c_str(), "name=\"") != nullptr)
+			std::stringstream ss(line);
+			while (ss >> word)
 			{
-				imageName = getString(word);
-			}
-			else if (strstr(word.c_str(), "width=") != nullptr)
-			{
-				imageWidth = getInt(word);
-			}
-			else if (strstr(word.c_str(), "height=") != nullptr)
-			{
-				imageHeight = getInt(word);
+				if (strstr(word.c_str(), "source=") != nullptr)
+				{
+					map.setImageName(getString(word));
+				}
+				else if (strstr(word.c_str(), "width=") != nullptr)
+				{
+					map.setImageWidth(getInt(word));
+				}
+				else if (strstr(word.c_str(), "height=") != nullptr)
+				{
+					map.setImageHeight(getInt(word));
+				}
 			}
 		}
+		else if (strstr(line.c_str(), "<tile id=") != nullptr)
+		{
+			unsigned int tileID = getInt(line);
+			if ( !map.isAnimatedTileLoaded(tileID) )
+			{
+				while (getline(reader, line, '\n'))
+				{
+					if (strstr(line.c_str(), "<animation>") != nullptr)
+					{
+						animationTile.setAttributes(tileID, map.getTileWidth(), map.getTileHeight());
+					}
+					else if (strstr(line.c_str(), " <frame tileid=") != nullptr)
+					{
+						std::stringstream ss(line);
+						unsigned int tileID;
+						unsigned int duration;
+						while (ss >> word)
+						{
+							if (strstr(word.c_str(), "tileid=") != nullptr)
+							{
+								tileID = getInt(word);
+							}
+							else if (strstr(word.c_str(), "duration=") != nullptr)
+							{
+								duration = getInt(word);
+							}
+						}
+						animationTile.addAnimationData(tileID, duration);
+					}
+					else if (strstr(line.c_str(), "</tile>") != nullptr)
+					{
+						break;
+					}
+				}
+			}
+		}
+		else if (strstr(line.c_str(), "<data encoding=") != nullptr)
+		{
+			readData(reader, map);
+		}
 	}
+
+	reader.close();
+	writeBin(map);
 }
 
-void read2()
-{
-	FILE *file;
-	fopen_s(&file, file_path, "r");
-	
-	if (file == NULL)
-	{
-		std::cout << "Failed to open file..\n";
-		return;
-	}
-	char line[125];
-	while ((fgets(line, 125, file)) != NULL)
-	{
-		//std::cout << line << std::endl;
-		//std::cin.get();
-	}
-
-}
 
 int main()
 {
 	read1();
-	read2();
+	//read2();
 	
 	
 	std::string temp = "KALLE=\"213\"";
